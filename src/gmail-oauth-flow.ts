@@ -5,7 +5,10 @@ import * as readline from "readline";
 import * as url from "url";
 import { OAuth2Client } from "google-auth-library";
 
-const SCOPES = ["https://mail.google.com/"];
+// Least-privilege scopes. gmail.modify covers read, label changes and trash;
+// it deliberately excludes https://mail.google.com/, which would also grant
+// permanent deletion (messages.delete / batchDelete).
+const SCOPES = ["https://www.googleapis.com/auth/gmail.readonly", "https://www.googleapis.com/auth/gmail.modify"];
 const TIMEOUT_MS = 2 * 60 * 1000;
 
 interface AuthResult {
@@ -101,6 +104,9 @@ export class GmailOAuthFlow {
 				console.log("Opening browser for Gmail authorization...");
 				console.log("If browser doesn't open, visit this URL:");
 				console.log(authUrl);
+				console.log("");
+				console.log(`Note: the redirect goes to ${redirectUri} on THIS machine.`);
+				console.log("On a headless host, re-run with --manual instead.");
 				this.openBrowser(authUrl);
 
 				this.timeoutId = setTimeout(() => {
@@ -165,6 +171,18 @@ export class GmailOAuthFlow {
 
 	private openBrowser(url: string): void {
 		const cmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
-		spawn(cmd, [url], { detached: true, stdio: "ignore" });
+		try {
+			const child = spawn(cmd, [url], { detached: true, stdio: "ignore" });
+			// ENOENT arrives as an async 'error' event, not a throw. Without this
+			// handler Node crashes the process on headless hosts lacking xdg-open.
+			child.on("error", (err: NodeJS.ErrnoException) => {
+				console.log(`Could not launch a browser (${cmd}: ${err.code || err.message}).`);
+				console.log("Open the URL above manually, or re-run with --manual.");
+			});
+			child.unref();
+		} catch (err) {
+			console.log(`Could not launch a browser: ${err instanceof Error ? err.message : String(err)}`);
+			console.log("Open the URL above manually, or re-run with --manual.");
+		}
 	}
 }
