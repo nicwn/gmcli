@@ -2,12 +2,13 @@
 
 import * as fs from "fs";
 import { parseArgs } from "util";
-import { GmailService } from "./gmail-service.js";
+import { GmailService, isInvalidGrantError } from "./gmail-service.js";
 
 const service = new GmailService();
 
 // Global JSON output flag
 let jsonOutput = false;
+let activeAccount: string | undefined;
 
 function usage(): never {
 	console.log(`gmcli - Gmail CLI
@@ -139,6 +140,7 @@ async function main() {
 
 		// All other commands: first arg is email, second is command
 		const account = first;
+		activeAccount = account;
 		const command = rest[0];
 		const commandArgs = rest.slice(1);
 
@@ -169,7 +171,15 @@ async function main() {
 				error(`Unknown command: ${command}`);
 		}
 	} catch (e) {
-		error(e instanceof Error ? e.message : String(e));
+		const msg = e instanceof Error ? e.message : String(e);
+		if (isInvalidGrantError(e) && activeAccount) {
+			console.error(
+				`Error: Re-authentication required for ${activeAccount}: gmcli accounts remove ${activeAccount} && gmcli accounts add ${activeAccount} --manual`,
+			);
+			console.error(`Original error: ${msg}`);
+			process.exit(1);
+		}
+		error(msg);
 	}
 }
 
@@ -186,7 +196,7 @@ async function handleAccounts(args: string[]) {
 				console.log("No accounts configured");
 			} else {
 				for (const a of accounts) {
-					console.log(a.email);
+					console.log(a.issuedAt ? `${a.email}\t${a.issuedAt}` : a.email);
 				}
 			}
 			break;
@@ -206,6 +216,7 @@ async function handleAccounts(args: string[]) {
 			const filtered = args.slice(1).filter((a) => a !== "--manual");
 			const email = filtered[0];
 			if (!email) error("Usage: accounts add <email> [--manual]");
+			activeAccount = email;
 			const creds = service.getCredentials();
 			if (!creds) error("No credentials configured. Run: gmcli accounts credentials <credentials.json>");
 			await service.addGmailAccount(email, creds.clientId, creds.clientSecret, manual);

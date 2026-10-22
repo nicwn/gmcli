@@ -43,6 +43,7 @@ export class GmailOAuthFlow {
 
 		const authUrl = this.oauth2Client.generateAuthUrl({
 			access_type: "offline",
+			prompt: "consent",
 			scope: SCOPES,
 		});
 
@@ -98,6 +99,7 @@ export class GmailOAuthFlow {
 
 				const authUrl = this.oauth2Client.generateAuthUrl({
 					access_type: "offline",
+					prompt: "consent",
 					scope: SCOPES,
 				});
 

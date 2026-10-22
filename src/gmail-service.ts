@@ -69,6 +69,7 @@ export class GmailService {
 
 		const account: EmailAccount = {
 			email,
+			issuedAt: new Date().toISOString(),
 			oauth2: { clientId, clientSecret, refreshToken },
 		};
 
@@ -658,4 +659,24 @@ export class GmailService {
 		const header = message.payload?.headers?.find((h) => h.name?.toLowerCase() === headerName.toLowerCase());
 		return header?.value || undefined;
 	}
+}
+
+export function isInvalidGrantError(err: unknown): boolean {
+	const seen = new Set<any>();
+	const stack: any[] = [err];
+	while (stack.length > 0) {
+		const current = stack.pop();
+		if (!current || typeof current !== "object" || seen.has(current)) continue;
+		seen.add(current);
+		const obj = current as any;
+		if (obj?.response?.data?.error === "invalid_grant") return true;
+		if (typeof obj?.error === "string" && obj.error === "invalid_grant") return true;
+		if (typeof obj?.message === "string" && obj.message.includes("invalid_grant")) return true;
+		if (obj?.cause) stack.push(obj.cause);
+		if (obj?.errors) {
+			const errs = Array.isArray(obj.errors) ? obj.errors : [obj.errors];
+			for (const e of errs) stack.push(e);
+		}
+	}
+	return false;
 }
