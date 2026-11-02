@@ -55,6 +55,39 @@ export interface LabelOperationResult {
 	error?: string;
 }
 
+// An RFC 2047 encoded-word is limited to 75 characters, so with "=?UTF-8?B?" and "?="
+// taken out a word carries at most 45 bytes of UTF-8. Words are cut on code point
+// boundaries: readers decode each word on its own, so a split code point would mojibake.
+const ENCODED_WORD_MAX_BYTES = 45;
+
+/**
+ * RFC 2047 encodes a Subject value that is not printable US-ASCII, folding it over several
+ * encoded-words when it does not fit one. Printable-ASCII subjects are returned unchanged so
+ * their header line stays byte-identical; a subject carrying control characters (CR/LF
+ * included) is encoded too, which keeps injected header lines out of the message.
+ */
+export function encodeSubjectHeader(subject: string): string {
+	if (/^[\x20-\x7e]*$/.test(subject)) return subject;
+
+	const words: string[] = [];
+	let word: Buffer[] = [];
+	let wordBytes = 0;
+
+	for (const char of subject) {
+		const charBytes = Buffer.from(char, "utf8");
+		if (wordBytes + charBytes.length > ENCODED_WORD_MAX_BYTES) {
+			words.push(`=?UTF-8?B?${Buffer.concat(word).toString("base64")}?=`);
+			word = [];
+			wordBytes = 0;
+		}
+		word.push(charBytes);
+		wordBytes += charBytes.length;
+	}
+	words.push(`=?UTF-8?B?${Buffer.concat(word).toString("base64")}?=`);
+
+	return words.join("\r\n ");
+}
+
 export class GmailService {
 	private accountStorage = new AccountStorage();
 	private gmailClients: Map<string, any> = new Map();
@@ -393,7 +426,7 @@ export class GmailService {
 			`To: ${to.join(", ")}`,
 			options.cc?.length ? `Cc: ${options.cc.join(", ")}` : "",
 			options.bcc?.length ? `Bcc: ${options.bcc.join(", ")}` : "",
-			`Subject: ${subject}`,
+			`Subject: ${encodeSubjectHeader(subject)}`,
 			inReplyTo ? `In-Reply-To: ${inReplyTo}` : "",
 			references ? `References: ${references}` : "",
 			"MIME-Version: 1.0",
@@ -548,7 +581,7 @@ export class GmailService {
 			`To: ${to.join(", ")}`,
 			options.cc?.length ? `Cc: ${options.cc.join(", ")}` : "",
 			options.bcc?.length ? `Bcc: ${options.bcc.join(", ")}` : "",
-			`Subject: ${subject}`,
+			`Subject: ${encodeSubjectHeader(subject)}`,
 			inReplyTo ? `In-Reply-To: ${inReplyTo}` : "",
 			references ? `References: ${references}` : "",
 			"MIME-Version: 1.0",
